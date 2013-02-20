@@ -8,15 +8,22 @@ import (
 
 func main () {
 	if len(os.Args) < 3 {
-		fmt.Println("Usage: commonsense_tester <username> <password>")
+		fmt.Println("Usage: commonsense_tester <username> <password> <server>")
 		return
 	}
 
 	username := os.Args[1]
 	password := os.Args[2]
+	server   := os.Args[3]
 
-	C := commonsense.CommonSenseClient{Debug: true}
-	err := C.Login(username, password)
+	C, err := commonsense.NewCommonSenseClient(server)
+	if err != nil {
+		fmt.Println(err)
+		return 
+	}
+	
+	C.Debug = true
+	err = C.Login(username, password)
 	
 	if err != nil {
 		fmt.Println("Login failed", err)

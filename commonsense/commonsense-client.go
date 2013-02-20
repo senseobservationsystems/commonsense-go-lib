@@ -8,6 +8,7 @@ import (
 	"strings"
 	"errors"
 	"encoding/json"
+	"crypto/tls"
 )
 
 type CS_Credentials struct {
@@ -73,13 +74,43 @@ type CS_Sensors_Wrapper struct {
 
 type CommonSenseClient struct {
 	client			http.Client
+	server			string
+	base_url		string
 	session_id 		string
 	Debug			bool
 }
 
-func (C *CommonSenseClient) apiCall (method, url, body string) (r_headers http.Header, r_body []byte, err error) {
+func NewCommonSenseClient (server string) (C *CommonSenseClient, err error) {
+	C = new(CommonSenseClient)
 	
-	full_url := fmt.Sprintf("http://api.dev.sense-os.nl%s", url)
+	servers := map[string] bool{"live":true, "rc":true, "dev":true}
+	
+	if !servers[server] {
+		err = errors.New("Invalid server")
+		return nil, err
+	}
+	
+	if server == "live" {
+		tr := &http.Transport {
+			TLSClientConfig:    &tls.Config{},
+			DisableCompression: true,
+		}
+		C.client.Transport = tr
+		C.base_url = "https://api.sense-os.nl"
+	} else if server == "rc" {
+		C.base_url = "http://api.rc.dev.sense-os.nl"
+	} else if server == "dev" {
+		C.base_url = "http://api.dev.sense-os.nl"
+	}
+	
+	C.server = server
+	
+	return C, nil
+}
+
+func (C *CommonSenseClient) apiCall (method, url, body string) (r_headers http.Header, r_body []byte, err error) {
+
+	full_url := fmt.Sprintf("%s%s", C.base_url, url)
 	
 	req, err := http.NewRequest(method, full_url, strings.NewReader(body))
 	if err != nil {
@@ -235,7 +266,16 @@ func (C *CommonSenseClient) PostSensor (s CS_Sensor) (id string, err error) {
 	}
 	
 	loc := h.Get("Location")
-	_, err = fmt.Sscanf(loc, "http://api.dev.sense-os.nl/sensors/%s", &id)
+	format := ""
+	if C.server == "live" {
+		format = fmt.Sprintf("http://api.sense-os.nl/sensors/%s", "%s")
+	} else if C.server == "rc" {
+		format = fmt.Sprintf("http://api.rc.dev.sense-os.nl/sensors/%s", "%s")
+	} else if C.server == "dev" {
+		format = fmt.Sprintf("http://api.dev.sense-os.nl/sensors/%s", "%s")
+	}
+	fmt.Println(format)
+	_, err = fmt.Sscanf(loc, format, &id)
 	if err != nil {
 		return "0", err
 	}
