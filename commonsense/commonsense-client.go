@@ -9,7 +9,7 @@ import (
 	"errors"
 	"encoding/json"
 	"net/url"
-	"strconv"
+	"github.com/senseobservationsystems/cassandra-service/adapters/v2adapter"
 )
 
 type CS_Credentials struct {
@@ -41,13 +41,15 @@ type CS_SensorMetatags struct {
 }
 
 type CS_Data struct {
-	Value				string      `json:"value"`
-	Date				float32      `json:"date,omitempty"`
+	Sensor_id 			int 					`json:"sensor_id,omitempty"`
+	Value				string      			`json:"value"`
+	Date				v2adapter.FloatDate     `json:"date,omitempty"`
 }
 
 type CS_SensorData struct {
-	SensorId			string		`json:"sensor_id"`
+	SensorId			string		`json:"sensor_id,omitempty"`
 	Data				[]CS_Data	`json:"data"`
+	Total 				int 		`json:"total,omitempty"`
 }
 
 type CS_Data_Wrapper struct {
@@ -79,6 +81,10 @@ type CommonSenseClient struct {
 	Debug			bool
 }
 
+func NewCommonSenseClient() (*CommonSenseClient) {
+	return &CommonSenseClient{}
+}
+
 func (C *CommonSenseClient) apiCall (method, url, body string) (r_headers http.Header, r_body []byte, err error) {
 
 	full_url := fmt.Sprintf("http://api.sense-os.nl%s", url)
@@ -92,10 +98,12 @@ func (C *CommonSenseClient) apiCall (method, url, body string) (r_headers http.H
 		req.Header.Add("X-SESSION_ID", C.session_id)
 	}
 	req.Header.Add("Accept", "*")
+	req.Header.Add("Content-Type", "application/json")
 
 	if C.Debug {
 		fmt.Println("\n===================")
 		fmt.Printf("URL: %s\n", full_url)
+		fmt.Printf("METHOD: %s\n", method)
 		fmt.Printf("HEADER: %v\n", req.Header)
 		fmt.Printf("BODY: %s\n", body)
 		fmt.Println("===================")
@@ -237,7 +245,7 @@ func (C *CommonSenseClient) PostSensor (s CS_Sensor) (id string, err error) {
 	}
 
 	loc := h.Get("Location")
-	_, err = fmt.Sscanf(loc, "http://api.dev.sense-os.nl/sensors/%s", &id)
+	_, err = fmt.Sscanf(loc, "http://api.sense-os.nl/sensors/%s", &id)
 	if err != nil {
 		return "0", err
 	}
@@ -260,8 +268,31 @@ func (C *CommonSenseClient) PutSensor (sensor_id string, s CS_Sensor) (err error
 	return nil
 }
 
+func (C *CommonSenseClient) DeleteSensor (sensor_id string) (err error) {
+	
+	_, _, err = C.apiCall("DELETE", fmt.Sprintf("/sensors/%s.json", sensor_id), "")
+	if err != nil {
+		return err
+	}
 
-func (C *CommonSenseClient) PostSensorData (d []CS_SensorData) (err error) {
+	return nil
+}
+
+func (C *CommonSenseClient) PostSensorData(sensor_id string, d CS_SensorData) (err error) {
+	data, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = C.apiCall("POST", fmt.Sprintf("/sensors/%s/data", sensor_id), string(data))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (C *CommonSenseClient) PostSensorsData(d []CS_SensorData) (err error) {
 	v := CS_SensorData_Wrapper{d}
 	data, err := json.Marshal(&v)
 	if err != nil {
@@ -278,12 +309,9 @@ func (C *CommonSenseClient) PostSensorData (d []CS_SensorData) (err error) {
 	return nil
 }
 
-func (C *CommonSenseClient) GetSensorData (sensor_id string, page, per_page, start_date, end_date int) ([]CS_Data, error) {
-    par := url.Values{}
-    par.Add("page", strconv.Itoa(page))
-    par.Add("per_page", strconv.Itoa(per_page))
-    par.Add("start_date", strconv.Itoa(start_date))
-    par.Add("end_date", strconv.Itoa(end_date))
+func (C *CommonSenseClient) GetSensorData(sensor_id string, parameters map[string]interface{}) ([]CS_Data, error) {
+
+    par := urlEncode(parameters)
 
     _, b, err := C.apiCall("GET", fmt.Sprintf("/sensors/%s/data.json?%s", sensor_id, par.Encode()), "")
 
@@ -298,4 +326,32 @@ func (C *CommonSenseClient) GetSensorData (sensor_id string, page, per_page, sta
 	}
 
 	return v.Data, nil
+}
+
+func (C *CommonSenseClient) GetSensorsData(sensor_ids []string, parameters map[string]interface{}) ([]CS_Data, error) {
+	par := urlEncode(parameters)
+	for _, s := range sensor_ids {
+		par.Add("sensor_id[]", s)
+	}
+
+	_, b, err := C.apiCall("GET", fmt.Sprintf("/sensors/data.json?%s", par.Encode()), "")
+
+	if err != nil {
+		return nil, err
+	}
+
+	v := CS_Data_Wrapper{}
+	if err = json.Unmarshal(b, &v); err != nil {
+		return nil, err
+	}
+
+	return v.Data, nil
+}
+
+func urlEncode(m map[string]interface{}) (url.Values) {
+	parameters := url.Values{}
+	for k, v := range m {
+		parameters.Add(k, fmt.Sprint(v))
+	}
+	return parameters
 }
