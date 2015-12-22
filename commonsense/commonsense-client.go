@@ -9,7 +9,7 @@ import (
 	"errors"
 	"encoding/json"
 	"net/url"
-	"github.com/senseobservationsystems/cassandra-service/adapters/v2adapter"
+	"github.com/senseobservationsystems/marpessa/marpessa/v2adapter"
 )
 
 type CS_Credentials struct {
